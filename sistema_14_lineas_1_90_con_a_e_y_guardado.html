@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Sistema de 14 líneas, números 1–90; impares a la izquierda, pares a la derecha; 5 locaciones A–E con indicador rojo/verde y guardado en localStorage." />
+  <title>Sistema 14 Líneas 1–90</title>
+  <style>
+    :root{
+      --bg:#0f172a;            /* slate-900 */
+      --panel:#111827;         /* gray-900 */
+      --muted:#334155;         /* slate-600 */
+      --text:#e5e7eb;          /* gray-200 */
+      --accent:#2563eb;        /* blue-600 */
+      --ok:#16a34a;            /* green-600 */
+      --bad:#dc2626;           /* red-600 */
+      --off:#475569;           /* slate-600 */
+      --card:#0b1220;          /* deep */
+      --shadow: 0 10px 25px rgba(0,0,0,.45);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#050810);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif}
+    header{position:sticky;top:0;background:rgba(5,8,16,.9);backdrop-filter: blur(6px);z-index:10;border-bottom:1px solid #1f2937}
+    .wrap{max-width:1280px;margin:0 auto;padding:18px}
+    h1{margin:0 0 8px;font-size:clamp(20px,3vw,28px);letter-spacing:.2px}
+    .sub{font-size:13px;color:#cbd5e1;opacity:.9}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .btn{appearance:none;border:1px solid #1f2937;background:var(--panel);color:var(--text);padding:8px 12px;border-radius:12px;cursor:pointer;box-shadow:var(--shadow);font-size:14px}
+    .btn:active{transform:translateY(1px)}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px;padding:16px}
+    @media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+
+    .line{background:var(--card);border:1px solid #1f2937;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+    .linehead{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #1f2937;background:linear-gradient(180deg,#0e1628,#0a111e)}
+    .linetitle{font-weight:700;letter-spacing:.4px}
+    .cols{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid #0b1220}
+    .col{padding:8px 10px;max-height:360px;overflow:auto}
+    .col::-webkit-scrollbar{height:8px;width:8px}
+    .col::-webkit-scrollbar-thumb{background:#1f2a44;border-radius:8px}
+    .coltitle{position:sticky;top:0;background:linear-gradient(180deg,#0b1220,#0b1220);padding:6px 4px 8px;margin:-8px -10px 6px;border-bottom:1px solid #111b30;z-index:1;text-align:center;font-size:13px;color:#cbd5e1}
+
+    .number{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;margin:4px 0;border:1px solid #172036;border-radius:12px;background:linear-gradient(180deg,#0b1526,#0a1322)}
+    .nlabel{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+    .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#0f1a31;border:1px solid #1a2642;font-size:12px;color:#cbd5e1}
+
+    .locs{display:flex;gap:6px;flex-wrap:wrap}
+    .loc{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border-radius:10px;border:1px solid #1a2540;background:#0c1528;cursor:pointer;user-select:none}
+    .dot{width:12px;height:12px;border-radius:6px;background:var(--off);border:1px solid #111827;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+    .dot.green{background:var(--ok)}
+    .dot.red{background:var(--bad)}
+    .loc small{font-size:12px;color:#cbd5e1;opacity:.9}
+
+    footer{opacity:.8;text-align:center;padding:24px 12px;font-size:12px;color:#cbd5e1}
+    code{background:#0f172a;border:1px solid #1f2937;border-radius:8px;padding:2px 6px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1 id="title">Sistema: 14 líneas · 1–90 · A–E</h1>
+      <div class="sub" id="meta">
+        Archivo/URL: <code id="urlName"></code> · Estado guardado en <code>localStorage</code> · Click para alternar <span style="color:var(--ok)">verde</span>/<span style="color:var(--bad)">rojo</span> (con estado neutro inicial).
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="clearAll">Limpiar todos</button>
+        <button class="btn" id="exportBtn">Exportar estado (JSON)</button>
+        <button class="btn" id="importBtn">Importar estado (JSON)</button>
+        <button class="btn" id="compactToggle">Vista compacta</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="grid" id="lines"></section>
+  </main>
+
+  <footer>
+    Nota sobre nombre y permisos: el título se ajusta automáticamente al nombre del archivo obtenido de la URL. Los "permisos" del archivo dependen del servidor o del sistema operativo donde aloje este HTML (no pueden modificarse desde una página estática del navegador).
+  </footer>
+
+  <script>
+    (function(){
+      // --- Utilidades ---
+      const $ = (sel, el=document) => el.querySelector(sel);
+      const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+      const KEY_PREFIX = 'line14_1_90_AE::';
+
+      const getKey = (line,n,loc) => `${KEY_PREFIX}${line}:${n}:${loc}`;
+      const get = (k) => localStorage.getItem(k);
+      const set = (k,v) => localStorage.setItem(k,v);
+      const delPrefix = (prefix) => {
+        const keys=[]; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k && k.startsWith(prefix)) keys.push(k)}
+        keys.forEach(k=>localStorage.removeItem(k));
+      };
+
+      // --- Generación UI ---
+      const linesWrap = $('#lines');
+      const NUM_LINES = 14;
+      const MIN = 1, MAX = 90;
+
+      function makeNumberBox(line, n){
+        const number = document.createElement('div');
+        number.className = 'number';
+        const nlabel = document.createElement('div');
+        nlabel.className = 'nlabel';
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = `L${line}`;
+        const ntext = document.createElement('span');
+        ntext.textContent = n;
+        nlabel.append(chip,ntext);
+
+        const locs = document.createElement('div');
+        locs.className = 'locs';
+        for(const loc of ['A','B','C','D','E']){
+          const btn = document.createElement('div');
+          btn.className = 'loc';
+          btn.setAttribute('role','button');
+          btn.setAttribute('tabindex','0');
+          btn.dataset.line = line;
+          btn.dataset.n = n;
+          btn.dataset.loc = loc;
+
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+
+          const label = document.createElement('small');
+          label.textContent = loc;
+
+          btn.append(dot,label);
+          locs.append(btn);
+
+          // Restaurar estado del localStorage
+          const saved = get(getKey(line,n,loc));
+          if(saved === 'green') dot.classList.add('green');
+          else if(saved === 'red') dot.classList.add('red');
+
+          // Click: gris -> verde -> rojo -> gris
+          btn.addEventListener('click', () => {
+            const key = getKey(line,n,loc);
+            if(dot.classList.contains('green')){
+              dot.classList.remove('green');
+              dot.classList.add('red');
+              set(key,'red');
+            }else if(dot.classList.contains('red')){
+              dot.classList.remove('red');
+              set(key,'');
+              localStorage.removeItem(key);
+            }else{
+              dot.classList.add('green');
+              set(key,'green');
+            }
+          });
+          // Teclado (espacio/enter)
+          btn.addEventListener('keydown', (e)=>{
+            if(e.key===' '||e.key==='Enter'){e.preventDefault(); btn.click();}
+          });
+        }
+
+        number.append(nlabel, locs);
+        return number;
+      }
+
+      function makeLine(line){
+        const wrap = document.createElement('article');
+        wrap.className = 'line';
+        const head = document.createElement('div');
+        head.className = 'linehead';
+        head.innerHTML = `<div class="linetitle">Línea ${line}</div><div style="font-size:12px;color:#cbd5e1">Impares ← | → Pares</div>`;
+        const cols = document.createElement('div');
+        cols.className = 'cols';
+
+        const left = document.createElement('div'); left.className = 'col';
+        const right = document.createElement('div'); right.className = 'col';
+
+        const lt = document.createElement('div'); lt.className='coltitle'; lt.textContent = 'Impares (1,3,5,...)';
+        const rt = document.createElement('div'); rt.className='coltitle'; rt.textContent = 'Pares (2,4,6,...)';
+        left.append(lt); right.append(rt);
+
+        for(let n=MIN;n<=MAX;n++){
+          if(n%2===1) left.append(makeNumberBox(line,n));
+          else right.append(makeNumberBox(line,n));
+        }
+
+        cols.append(left,right);
+        wrap.append(head,cols);
+        return wrap;
+      }
+
+      // Crear 14 líneas
+      const frag = document.createDocumentFragment();
+      for(let line=1; line<=NUM_LINES; line++) frag.append(makeLine(line));
+      linesWrap.append(frag);
+
+      // --- Acciones de toolbar ---
+      $('#clearAll').addEventListener('click',()=>{
+        if(confirm('¿Seguro que quieres limpiar todos los indicadores?')){
+          delPrefix(KEY_PREFIX);
+          $$('.dot').forEach(d=>{d.classList.remove('green','red')});
+        }
+      });
+
+      $('#exportBtn').addEventListener('click',()=>{
+        const data = {};
+        for(let i=0;i<localStorage.length;i++){
+          const k = localStorage.key(i);
+          if(k && k.startsWith(KEY_PREFIX)) data[k] = localStorage.getItem(k);
+        }
+        const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'estado_lineas_1-90.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      $('#importBtn').addEventListener('click',()=>{
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.onchange = () => {
+          const file = input.files && input.files[0];
+          if(!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            try{
+              const data = JSON.parse(String(reader.result||'{}'));
+              Object.keys(data).forEach(k=>{
+                if(k.startsWith(KEY_PREFIX)) localStorage.setItem(k, data[k]);
+              });
+              // Refrescar UI
+              $$('.loc').forEach(btn=>{
+                const dot = btn.querySelector('.dot');
+                dot.classList.remove('green','red');
+                const line = btn.dataset.line|0; const n = btn.dataset.n|0; const loc = btn.dataset.loc;
+                const saved = get(getKey(line,n,loc));
+                if(saved==='green') dot.classList.add('green');
+                else if(saved==='red') dot.classList.add('red');
+              });
+              alert('Importación completada.');
+            }catch(err){
+              alert('Archivo inválido.');
+            }
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      });
+
+      // Vista compacta: oculta etiquetas de línea en chips y reduce padding
+      let compact=false;
+      $('#compactToggle').addEventListener('click',()=>{
+        compact=!compact;
+        document.body.classList.toggle('compact', compact);
+      });
+      const styleCompact = document.createElement('style');
+      styleCompact.textContent = `
+        body.compact .chip{display:none}
+        body.compact .number{padding:4px 6px;margin:3px 0}
+        body.compact .loc{padding:3px 5px}
+        body.compact .col{max-height:300px}
+      `;
+      document.head.append(styleCompact);
+
+      // Ajustar título y mostrar nombre de archivo desde la URL
+      const urlPath = (location.pathname||'').split('/').filter(Boolean);
+      const fileName = urlPath[urlPath.length-1] || 'index.html';
+      document.title = fileName + ' · Sistema 14 Líneas';
+      $('#urlName').textContent = fileName;
+      $('#title').textContent = `Sistema: 14 líneas · 1–90 · A–E (${fileName})`;
+    })();
+  </script>
+</body>
+</html>
